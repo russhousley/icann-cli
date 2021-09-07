@@ -1,4 +1,14 @@
 #!/usr/bin/env python
+#
+# Command Line Interface to fetch ICANN documents and open them
+# from the local directories.  The Mac "open" command is used
+# so that user preferences for .pdf and .htm files are honored.
+# The associated .config file determines which directories are
+# used to store the files.
+#
+# Copyright (c) 2021, Vigil Security, LLC
+# License: https://github.com/russhousley/icann-cli/blob/main/LICENSE
+#
 
 import os
 import sys
@@ -14,9 +24,14 @@ from bs4 import BeautifulSoup
 Program for command-line users to access ICANN documents.
 """
 
-__version__ = "1.00"
-__license__ = "https://en.wikipedia.org/wiki/WTFPL"
+__version__ = "1.01"
+__license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 
+# Version history:
+#  1.00 = Initial release
+#  1.01 = After cleaning up the SSAC document mirror, one routine can now
+#         be used to open SSAC, RSSAC, or OCTO documents from the local
+#         directories.
 
 def clean_html(pathname, html):
     """
@@ -124,8 +139,6 @@ def mirror_ssac_documents():
 
     # If any files were fetched, save the index; also close the temporary file
     if WriteIndexFile:
-        pass
-    if True:
         TempFile.seek(0)
         IndexFile = os.path.join(SSACDir, "sac-index.txt")
         open(IndexFile, mode="w").write(TempFile.read())
@@ -258,76 +271,41 @@ def cmd_mirror():
     print("")
 
 
-def cmd_ssac(num):
+def cmd_open_doc(docdir, fnprefix, num):
     """
-    Open SSAC documents locally based on number.
+    Open SSAC, RSSAC, or OCTO document from the local directory.
     """
-	# See if the provided number has been published
-    prefix = "sac-" + "%03d" % num + "*-en.*"
-    fnlist = [fn for fn in os.listdir(SSACDir) if fnmatch.fnmatch(fn, prefix)]
-    if len(fnlist) == 0:
-        print("No published SSAC document for %03d." % num)
-    # If only one file matches, open it
-    elif len(fnlist) == 1:
-        pathname = os.path.join(SSACDir, fnlist[0])
-        os.system("open " + pathname)
-    # If more than one file matches, prefer the .pdf files
+    if num == 'index':
+        os.system("open " + os.path.join(docdir, fnprefix + "-index.txt"))
+        return
+
+    # Check for an exact match to allow for opening a particular version
+    # (like rssac-002v4-en.pdf) or multi-part documents (like sac-036b-en.pdf)
+    if len(num) > 3:
+        matchstr = fnprefix + "-" + num + "*.*"
+        fnlist = [fn for fn in os.listdir(docdir) if fnmatch.fnmatch(fn, matchstr)]
+        if len(fnlist) == 1:
+            pathname = os.path.join(docdir, fnlist[0])
+            os.system("open " + pathname)
+        else:
+            sys.exit("No published document matches %s-%s." % (fnprefix, num))
+
+    # otherwise, assume a document number was provided
     else:
-        opened_flag = False
-        for fn in fnlist:
-            if fn.endswith(".pdf"):
-                pathname = os.path.join(SSACDir, fn)
+        try:
+            matchstr = fnprefix + "-" + "%03d" % int(num) + "*-en.*"
+        except:
+            sys.exit("error: must provide a document number or 'index'")
+
+        fnlist = [fn for fn in os.listdir(docdir) if fnmatch.fnmatch(fn, matchstr)]
+        if len(fnlist) == 0:
+            print("No published document for %s-%03d." % (fnprefix, int(num)))
+        #  open all of the matches
+        else:
+            for fn in fnlist:
+                pathname = os.path.join(docdir, fn)
                 print("Opening " + fn)
                 os.system("open " + pathname)
-                opened_flag = True
-        if not opened_flag:
-            for fn in fnlist:
-                if fn.endswith(".htm"):
-                    pathname = os.path.join(SSACDir, fn)
-                    print("Opening " + fn)
-                    os.system("open " + pathname)
-
-
-def cmd_rssac(num):
-    """
-    Open RSSAC documents locally based on number.
-    """
-	# See if the provided number has been published
-    prefix = "rssac-" + "%03d" % num + "*-en.pdf"
-    fnlist = [fn for fn in os.listdir(RSSACDir) if fnmatch.fnmatch(fn, prefix)]
-    if len(fnlist) == 0:
-        print("No published RSSAC document for %03d." % num)
-    # If only one file matches, open it
-    elif len(fnlist) == 1:
-        pathname = os.path.join(RSSACDir, fnlist[0])
-        os.system("open " + pathname)
-    # If more than one file matches, open multiple versions
-    else:
-        for fn in fnlist:
-            pathname = os.path.join(RSSACDir, fn)
-            print("Opening " + fn)
-            os.system("open " + pathname)
-
-
-def cmd_octo(num):
-    """
-    Open OCTO documents locally based on number.
-    """
-	# See if the provided number has been published
-    prefix = "octo-" + "%03d" % num + "*-en.pdf"
-    fnlist = [fn for fn in os.listdir(OCTODir) if fnmatch.fnmatch(fn, prefix)]
-    if len(fnlist) == 0:
-        print("No published OCTO document for %03d." % num)
-    # If only one file matches, open it
-    elif len(fnlist) == 1:
-        pathname = os.path.join(OCTODir, fnlist[0])
-        os.system("open " + pathname)
-    # If more than one file matches, open multiple versions
-    else:
-        for fn in fnlist:
-            pathname = os.path.join(OCTODir, fn)
-            print("Opening " + fn)
-            os.system("open " + pathname)
 
 
 def usage(name):
@@ -438,21 +416,6 @@ if sys.argv[1] in ['ssac', 'rssac', 'octo']:
         usage(sys.argv[0])
         sys.exit(1)
 
-    if sys.argv[2] == 'index':
-        if sys.argv[1] == 'ssac':
-            os.system("open " + os.path.join(SSACDir, "sac-index.txt"))
-        if sys.argv[1] == 'rssac':
-            os.system("open " + os.path.join(RSSACDir, "rssac-index.txt"))
-        if sys.argv[1] == 'octo':
-            os.system("open " + os.path.join(OCTODir, "octo-index.txt"))
-    else:
-        try:
-            num = int(sys.argv[2])
-        except:
-            print("error: second argument must be 'index' or a document number")
-            usage(sys.argv[0])
-            sys.exit(1)
-
-        if sys.argv[1] == 'ssac':   cmd_ssac(num)
-        if sys.argv[1] == 'rssac':  cmd_rssac(num)
-        if sys.argv[1] == 'octo':   cmd_octo(num)
+    if sys.argv[1] == 'ssac':   cmd_open_doc(SSACDir, "sac", sys.argv[2])
+    if sys.argv[1] == 'rssac':  cmd_open_doc(RSSACDir, "rssac", sys.argv[2])
+    if sys.argv[1] == 'octo':   cmd_open_doc(OCTODir, "octo", sys.argv[2])
