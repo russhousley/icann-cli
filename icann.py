@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Command Line Interface to fetch ICANN documents and open them
 # from the local directories.  The Mac "open" command is used
@@ -6,7 +6,7 @@
 # The associated .config file determines which directories are
 # used to store the files.
 #
-# Copyright (c) 2021, Vigil Security, LLC
+# Copyright (c) 2021-2023, Vigil Security, LLC
 # License: https://github.com/russhousley/icann-cli/blob/main/LICENSE
 #
 
@@ -24,7 +24,7 @@ from bs4 import BeautifulSoup
 Program for command-line users to access ICANN documents.
 """
 
-__version__ = "1.01"
+__version__ = "1.02"
 __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 
 # Version history:
@@ -32,6 +32,8 @@ __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 #  1.01 = After cleaning up the SSAC document mirror, one routine can now
 #         be used to open SSAC, RSSAC, or OCTO documents from the local
 #         directories.
+#  1.02 = Use python3, and adjust the use of some strings to bytes.
+#         Use mode="w+" with TempFile.
 
 def clean_html(pathname, html):
     """
@@ -75,7 +77,7 @@ def mirror_ssac_documents():
     Fetch SSAC documents from https://www.icann.org/groups/ssac/documents
     """
     # Get a temporary file to hold the index; it might be saved later
-    TempFile = tempfile.TemporaryFile()
+    TempFile = tempfile.TemporaryFile(mode="w+")
     TempFile.write("ICANN SSAC document index as of %s\n\n" % 
         datetime.date.today().strftime("%d-%b-%Y"))
 
@@ -86,8 +88,8 @@ def mirror_ssac_documents():
         sys.exit("Unable to fetch ICANN SSAC documents web page.")
 
     # Fix the mistakes in the table formatting
-    fixup = response.content.replace("<td>[SAC030]", "<tr><td>[SAC030]")
-    fixup = fixup.replace("</a>- Executive Summary", "- Executive Summary</a>")
+    fixup = response.content.replace(b"<td>[SAC030]", b"<tr><td>[SAC030]")
+    fixup = fixup.replace(b"</a>- Executive Summary", b"- Executive Summary</a>")
 
     # Parse the table building the index as we go
     WriteIndexFile = False
@@ -151,7 +153,7 @@ def mirror_rssac_documents():
     Fetch RSSAC documents from https://www.icann.org/groups/rssac/documents
     """
     # Get a temporary file to hold the index; it might be saved later
-    TempFile = tempfile.TemporaryFile()
+    TempFile = tempfile.TemporaryFile(mode="w+")
     TempFile.write("ICANN RSSAC document index as of %s\n\n" % 
         datetime.date.today().strftime("%d-%b-%Y"))
 
@@ -166,16 +168,16 @@ def mirror_rssac_documents():
     table = page.find("table")
     for row in table.findAll("tr")[1:]:
         tds = row.findAll('td')
-        a = tds[0].find("a", href=True, text=True)
+        a = tds[0].find("a", href=True, string=True)
         filename = os.path.basename(a['href'])
         pathname = os.path.join(RSSACDir, filename)
         url = "https://www.icann.org" + a['href']
         docname = a.contents[0]
         try:
-             doctitle = str(tds[1].contents[0]).encode('ascii')
+             doctitle = str(tds[1].contents[0])
         except:
              doctitle = str(tds[1].contents[0])[4:].split("<br/>")[0]
-        docdate = str(tds[2].contents[0]).encode('ascii')
+        docdate = str(tds[2].contents[0])
         ilines = textwrap.wrap(docname.ljust(11) + doctitle + " (" + docdate + ")",  
             width=73, initial_indent="", subsequent_indent="           ",
             break_long_words=False)
@@ -210,7 +212,7 @@ def mirror_octo_documents():
     Fetch OCTO documents from https://www.icann.org/resources/pages/octo-publications-2019-05-24-en
     """
     # Get a temporary file to hold the index; it might be saved later
-    TempFile = tempfile.TemporaryFile()
+    TempFile = tempfile.TemporaryFile(mode="w+")
     TempFile.write("ICANN OCTO document index as of %s\n\n" % 
         datetime.date.today().strftime("%d-%b-%Y"))
 
@@ -225,16 +227,16 @@ def mirror_octo_documents():
     table = page.find("table")
     for row in table.findAll("tr")[1:]:
         tds = row.findAll('td')
-        a = tds[0].find("a", href=True, text=True)
+        a = tds[0].find("a", href=True, string=True)
         filename = os.path.basename(a['href'])
         pathname = os.path.join(OCTODir, filename)
         url = "https://www.icann.org" + a['href']
         docname = a.contents[0]
         try:
-             doctitle = str(tds[1].contents[0]).encode('ascii')
+             doctitle = str(tds[1].contents[0])
         except:
              doctitle = str(tds[1].contents[0])[4:].split("<br/>")[0]
-        docdate = str(tds[2].contents[0]).encode('ascii')
+        docdate = str(tds[2].contents[0])
         ilines = textwrap.wrap(docname.ljust(9) + doctitle + " (" + docdate + ")",  
             width=73, initial_indent="", subsequent_indent="         ",
             break_long_words=False)
