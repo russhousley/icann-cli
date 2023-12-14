@@ -400,7 +400,6 @@ except:
 SSACDir = ""
 RSSACDir = ""
 OCTODir = ""
-CSVCacheDir = ""
 try:
     exec(Configs)
 except:
@@ -414,9 +413,6 @@ if RSSACDir == "":
 
 if OCTODir == "":
     sys.exit("OCTODir not set by %s." % ConfigFile)
-
-if CSVCacheDir == "":
-    sys.exit("CSVCacheDir not set by %s." % ConfigFile)
 
 # Parse mirror arguments; then execute the command
 if sys.argv[1] == 'mirror':
