@@ -12,6 +12,7 @@
 
 import os
 import sys
+import json
 import fnmatch
 import datetime
 import platform
@@ -24,7 +25,7 @@ from bs4 import BeautifulSoup
 Program for command-line users to access ICANN documents.
 """
 
-__version__ = "1.02"
+__version__ = "1.03"
 __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 
 # Version history:
@@ -34,6 +35,8 @@ __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 #         directories.
 #  1.02 = Use python3, and adjust the use of some strings to bytes.
 #         Use mode="w+" with TempFile.
+#  1.03 = New home for SSAC publications, which changed everything about
+#         the way these documents are fetched and indexed.
 
 def clean_html(pathname, html):
     """
@@ -74,78 +77,92 @@ def clean_html(pathname, html):
 
 def mirror_ssac_documents():
     """
-    Fetch SSAC documents from https://www.icann.org/groups/ssac/documents
+    Fetch SSAC documents from https://www.icann.org/en/ssac/publications
     """
-    # Get a temporary file to hold the index; it might be saved later
-    TempFile = tempfile.TemporaryFile(mode="w+")
-    TempFile.write("ICANN SSAC document index as of %s\n\n" % 
-        datetime.date.today().strftime("%d-%b-%Y"))
-
-    # Fetch the web page, then parse the table building the index as we go
+    # Fetch the SSAC reports web page
     print("Starting SSAC Documents")
-    response = requests.get("https://www.icann.org/groups/ssac/documents")
+    response = requests.get("https://www.icann.org/en/ssac/publications")
     if response.status_code != 200:
         sys.exit("Unable to fetch ICANN SSAC documents web page.")
 
-    # Fix the mistakes in the table formatting
-    fixup = response.content.replace(b"<td>[SAC030]", b"<tr><td>[SAC030]")
-    fixup = fixup.replace(b"</a>- Executive Summary", b"- Executive Summary</a>")
+    # There is a JSON database of the SSAC documents encoded in the last HTML line
+    # Build a dict that contains the document title and URL.
+    htmlurlprefix = "https://www.icann.org/en/ssac/publications/details/"
+    doc_dict = dict()
+    page = BeautifulSoup(response.content, features="lxml")
+    lastline = str(page.find("body")).split("\n")[-1]
+    temp = lastline.split("{", 1)[1]
+    temp = temp.rsplit("}", 1)[0]
+    temp = temp.replace('&q;', '"')
+    content = json.loads("{" + temp + "}")
+    reports = content['ssac-report-{"groups":"ssac-report","languageTag":"en"}']
+    docs = reports['data']['generalContentOperations']['generalContent']
+    for d in docs:
+        if not 'reportNumber' in d['extra']:
+            continue
+        if not d['language'] == 'en':
+            continue
+        if d['__typename'] == 'DocumentReferenceContentSummary':
+            docname = d['extra']['reportNumber'].replace(" ", "")
+            doc_dict.update({ docname : [ d['title'], d['url'] ]})
+        elif d['__typename'] == 'PageContentSummary':
+            url = "unknown"
+            docname = d['extra']['reportNumber'].replace(" ", "")
+            for e in d['link']['urlArguments']:
+                if e['key'] == 'slug':
+                    url = htmlurlprefix + e['value']
+            doc_dict.update({ docname : [ d['title'], url ]})
+        elif d['__typename'] == 'ExternalDocumentContentSummary':
+            docname = d['extra']['reportNumber'].replace(" ", "")
+            doc_dict.update({ docname : [ d['title'], d['url'] ]})
+        else:
+            sys.stderr.write("New document type added: " + d['__typename'] + ".\n")
 
-    # Parse the table building the index as we go
+    # Loop through the dict in sort order, and fetch any new documents
     WriteIndexFile = False
-    page = BeautifulSoup(fixup, features="lxml")
-    table = page.find("table")
-    for row in table.findAll("tr"):
-        tds = row.findAll('td')
-        if "SAC" in str(tds[0]):
-            docname = str(tds[0]).split("[", 1)[1].split("]", 1)[0]
-            doctitle = str(tds[1])[4:].split("<br/>")[0]
+    for d in sorted(doc_dict.keys(), reverse=True):
+        docname = d
+        [doctitle, url] = doc_dict[d]
+        filename = os.path.basename(url)
+        if filename.endswith("-en"):
+            filename = filename + ".htm"
+        pathname = os.path.join(SSACDir, filename)
+        if not os.path.exists(pathname):
+            response = requests.get(url)
+            if response.status_code != 200:
+                sys.stderr.write("Unable to fetch " + url + ".\n")
+            else:
+                WriteIndexFile = True
+                if filename.endswith(".htm"):
+                    clean_html(pathname, response.content)
+                else:
+                    open(pathname, mode="wb").write(response.content)
+                print(url)
+                if not filename.startswith("sac-"):
+                    linkfilename = "sac-" + docname[3:]
+                    if filename.endswith(".pdf"):
+                        linkfilename = linkfilename + "-en.pdf"
+                    if filename.endswith(".htm"):
+                        linkfilename = linkfilename + "-en.htm"
+                    linkpathname = os.path.join(SSACDir, linkfilename)
+                    if not os.path.exists(linkpathname):
+                        os.symlink(pathname, linkpathname)
+                        print("  With symlink " + linkfilename)
+
+    # If a new file was fetched, make a new index file
+    if WriteIndexFile:
+        IndexFile = open(os.path.join(SSACDir, "sac-index.txt"), mode="w")
+        IndexFile.write("ICANN SSAC document index as of %s\n\n" % 
+            datetime.date.today().strftime("%d-%b-%Y"))
+        for d in sorted(doc_dict.keys(), reverse=True):
+            docname = d
+            [doctitle, url] = doc_dict[d]
             ilines = textwrap.wrap(docname.ljust(8) + doctitle.lstrip(),
                 width=73, initial_indent="", subsequent_indent="        ",
                 break_long_words=False)
-            for l in ilines:  TempFile.write(l + "\n")
-            refs = row.find_all("a", href=True)
-            onlyHTML = all([a['href'].endswith(".htm") for a in refs])
-            for a in refs:
-                if "Executive Summary" in a.contents[0]:
-                    continue
-                if a['href'].endswith("-en.pdf") or \
-                    (onlyHTML and a['href'].endswith("-en.htm")) or \
-                    (docname == "SAC013" and a['href'].endswith(".htm")) or \
-                    (docname == "SAC007" and a['href'].endswith(".pdf")):
-                    TempFile.write("        " + a['href'] + "\n")
-                    filename = os.path.basename(a['href'])
-                    pathname = os.path.join(SSACDir, filename)
-                    url = "https://www.icann.org" + a['href']
-                    if not os.path.exists(pathname):
-                        response = requests.get(url)
-                        if response.status_code != 200:
-                            sys.stderr.write("Unable to fetch " + url + ".\n")
-                        else:
-                            WriteIndexFile = True
-                            if a['href'].endswith(".htm"):
-                                clean_html(pathname, response.content)
-                            else:
-                                open(pathname, mode="wb").write(response.content)
-                            print(url)
-                            if not filename.startswith("sac-"):
-                                linkfilename = "sac-" + docname[3:]
-                                if a['href'].endswith(".pdf"):
-                                    linkfilename = linkfilename + "-en.pdf"
-                                if a['href'].endswith(".htm"):
-                                    linkfilename = linkfilename + "-en.htm"
-                                linkpathname = os.path.join(SSACDir, linkfilename)
-                                os.symlink(pathname, linkpathname)
-                                print("  With symlink " + linkfilename)
-            TempFile.write("\n")
-
-    # If any files were fetched, save the index; also close the temporary file
-    if WriteIndexFile:
-        TempFile.seek(0)
-        IndexFile = os.path.join(SSACDir, "sac-index.txt")
-        open(IndexFile, mode="w").write(TempFile.read())
-
-    TempFile.close()
+            for l in ilines:  IndexFile.write(l + "\n")
+            IndexFile.write("        " + url + "\n\n")
+        IndexFile.close()
 
 
 def mirror_rssac_documents():
@@ -383,6 +400,7 @@ except:
 SSACDir = ""
 RSSACDir = ""
 OCTODir = ""
+CSVCacheDir = ""
 try:
     exec(Configs)
 except:
@@ -396,6 +414,9 @@ if RSSACDir == "":
 
 if OCTODir == "":
     sys.exit("OCTODir not set by %s." % ConfigFile)
+
+if CSVCacheDir == "":
+    sys.exit("CSVCacheDir not set by %s." % ConfigFile)
 
 # Parse mirror arguments; then execute the command
 if sys.argv[1] == 'mirror':
