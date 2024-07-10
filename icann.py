@@ -6,7 +6,7 @@
 # The associated .config file determines which directories are
 # used to store the files.
 #
-# Copyright (c) 2021-2023, Vigil Security, LLC
+# Copyright (c) 2021-2024, Vigil Security, LLC
 # License: https://github.com/russhousley/icann-cli/blob/main/LICENSE
 #
 
@@ -25,7 +25,7 @@ from bs4 import BeautifulSoup
 Program for command-line users to access ICANN documents.
 """
 
-__version__ = "1.03"
+__version__ = "1.04"
 __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 
 # Version history:
@@ -36,6 +36,8 @@ __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 #  1.02 = Use python3, and adjust the use of some strings to bytes.
 #         Use mode="w+" with TempFile.
 #  1.03 = New home for SSAC publications, which changed everything about
+#         the way these documents are fetched and indexed.
+#  1.04 = New home for RSSAC publications, which changed everything about
 #         the way these documents are fetched and indexed.
 
 def clean_html(pathname, html):
@@ -167,39 +169,44 @@ def mirror_ssac_documents():
 
 def mirror_rssac_documents():
     """
-    Fetch RSSAC documents from https://www.icann.org/groups/rssac/documents
+    Fetch RSSAC documents from https://www.icann.org/en/rssac/publications
     """
-    # Get a temporary file to hold the index; it might be saved later
-    TempFile = tempfile.TemporaryFile(mode="w+")
-    TempFile.write("ICANN RSSAC document index as of %s\n\n" % 
-        datetime.date.today().strftime("%d-%b-%Y"))
-
-    # Fetch the web page, then parse the table building the index as we go
+    # Fetch the RSSAC reports web page
     print("Starting RSSAC Documents")
-    response = requests.get("https://www.icann.org/groups/rssac/documents")
+    response = requests.get("https://www.icann.org/en/rssac/publications")
     if response.status_code != 200:
         sys.exit("Unable to fetch ICANN RSSAC documents web page.")
 
-    WriteIndexFile = False
+    # There is a JSON database of the SSAC documents encoded in the last HTML line
+    # Build a dict that contains the document title and URL.
+    htmlurlprefix = "https://www.icann.org/en/rssac/publications/details/"
+    doc_dict = dict()
     page = BeautifulSoup(response.content, features="lxml")
-    table = page.find("table")
-    for row in table.findAll("tr")[1:]:
-        tds = row.findAll('td')
-        a = tds[0].find("a", href=True, string=True)
-        filename = os.path.basename(a['href'])
-        pathname = os.path.join(RSSACDir, filename)
-        url = "https://www.icann.org" + a['href']
-        docname = a.contents[0]
-        try:
-             doctitle = str(tds[1].contents[0])
-        except:
-             doctitle = str(tds[1].contents[0])[4:].split("<br/>")[0]
-        docdate = str(tds[2].contents[0])
-        ilines = textwrap.wrap(docname.ljust(11) + doctitle + " (" + docdate + ")",  
-            width=73, initial_indent="", subsequent_indent="           ",
-            break_long_words=False)
-        for l in ilines:  TempFile.write(l + "\n")
-        TempFile.write("           " + a['href'] + "\n")
+    lastline = str(page.find("body")).split("\n")[-1]
+    temp = lastline.split("{", 1)[1]
+    temp = temp.rsplit("}", 1)[0]
+    temp = temp.replace('&q;', '"')
+    content = json.loads("{" + temp + "}")
+    reports = content['rssacPublication-{"groups":"rssac-publication","languageTag":"en"}']
+    docs = reports['data']['generalContentOperations']['generalContent']
+    for d in docs:
+        if not 'publicationNumber' in d['extra']:
+            continue
+        if not d['language'] == 'en':
+            continue
+        if d['__typename'] == 'DocumentReferenceContentSummary':
+            docname = d['extra']['publicationNumber'].replace(" ", "")
+            doc_dict.update({ docname : [ d['title'], d['url'], d['extra']['publicationDate'] ]})
+        else:
+            sys.stderr.write("New document type added: " + d['__typename'] + ".\n")
+
+    # Loop through the dict in sort order, and fetch any new documents
+    WriteIndexFile = False
+    for d in sorted(doc_dict.keys(), reverse=True):
+        docname = d
+        [doctitle, url, docdate] = doc_dict[d]
+        filename = os.path.basename(url)
+        pathname = os.path.join(SSACDir, filename)
         if not os.path.exists(pathname):
             response = requests.get(url)
             if response.status_code != 200:
@@ -208,20 +215,28 @@ def mirror_rssac_documents():
                 WriteIndexFile = True
                 open(pathname, mode="wb").write(response.content)
                 print(url)
-                if not filename.startswith("rssac-" + docname[5:].lower()):
-                    linkfilename = "rssac-" + docname[5:].lower() + "-en.pdf"
-                    linkpathname = os.path.join(RSSACDir, linkfilename)
-                    os.symlink(pathname, linkpathname)
-                    print("  With symlink " + linkfilename)
-            TempFile.write("\n")
+                if not filename.startswith("rssac-"):
+                    linkfilename = "rssac-" + docname[5:] + "-en.pdf"
+                    linkpathname = os.path.join(SSACDir, linkfilename)
+                    if not os.path.exists(linkpathname):
+                        os.symlink(pathname, linkpathname)
+                        print("  With symlink " + linkfilename)
 
-    # If any files were fetched, save the index; also close the temporary file
+    # If a new file was fetched, make a new index file
     if WriteIndexFile:
-        TempFile.seek(0)
-        IndexFile = os.path.join(RSSACDir, "rssac-index.txt")
-        open(IndexFile, mode="w").write(TempFile.read())
-
-    TempFile.close()
+        IndexFile = open(os.path.join(SSACDir, "rssac-index.txt"), mode="w")
+        IndexFile.write("ICANN RSSAC document index as of %s\n\n" % 
+            datetime.date.today().strftime("%d-%b-%Y"))
+        for d in sorted(doc_dict.keys(), reverse=True):
+            docname = d
+            [doctitle, url, docdate] = doc_dict[d]
+            ilines = textwrap.wrap(
+                docname.ljust(11) + doctitle.lstrip() + " (" + docdate + ")",
+                width=73, initial_indent="", subsequent_indent="           ",
+                break_long_words=False)
+            for l in ilines:  IndexFile.write(l + "\n")
+            IndexFile.write("        " + url + "\n\n")
+        IndexFile.close()
 
 
 def mirror_octo_documents():
