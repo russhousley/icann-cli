@@ -25,7 +25,7 @@ from bs4 import BeautifulSoup
 Program for command-line users to access ICANN documents.
 """
 
-__version__ = "1.04"
+__version__ = "1.05"
 __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 
 # Version history:
@@ -39,6 +39,8 @@ __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 #         the way these documents are fetched and indexed.
 #  1.04 = New home for RSSAC publications, which changed everything about
 #         the way these documents are fetched and indexed.
+#  1.05 = Deal with the script that was added on the same line as the JSON
+#         in the SSAC and RSSAC publications.
 
 def clean_html(pathname, html):
     """
@@ -96,6 +98,7 @@ def mirror_ssac_documents():
     temp = lastline.split("{", 1)[1]
     temp = temp.rsplit("}", 1)[0]
     temp = temp.replace('&q;', '"')
+    temp = temp.split("}</script>", 1)[0]
     content = json.loads("{" + temp + "}")
     reports = content['ssac-report-{"groups":"ssac-report","languageTag":"en"}']
     docs = reports['data']['generalContentOperations']['generalContent']
@@ -186,6 +189,7 @@ def mirror_rssac_documents():
     temp = lastline.split("{", 1)[1]
     temp = temp.rsplit("}", 1)[0]
     temp = temp.replace('&q;', '"')
+    temp = temp.split("}</script>", 1)[0]
     content = json.loads("{" + temp + "}")
     reports = content['rssacPublication-{"groups":"rssac-publication","languageTag":"en"}']
     docs = reports['data']['generalContentOperations']['generalContent']
