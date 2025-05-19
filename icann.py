@@ -6,7 +6,7 @@
 # The associated .config file determines which directories are
 # used to store the files.
 #
-# Copyright (c) 2021-2024, Vigil Security, LLC
+# Copyright (c) 2021-2025, Vigil Security, LLC
 # License: https://github.com/russhousley/icann-cli/blob/main/LICENSE
 #
 
@@ -41,6 +41,8 @@ __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 #         the way these documents are fetched and indexed.
 #  1.05 = Deal with the script that was added on the same line as the JSON
 #         in the SSAC and RSSAC publications.
+#  1.06 = Fix bug so that RSSAC publications and index are saved in the
+#         correct directory.
 
 def clean_html(pathname, html):
     """
@@ -210,7 +212,7 @@ def mirror_rssac_documents():
         docname = d
         [doctitle, url, docdate] = doc_dict[d]
         filename = os.path.basename(url)
-        pathname = os.path.join(SSACDir, filename)
+        pathname = os.path.join(RSSACDir, filename)
         if not os.path.exists(pathname):
             response = requests.get(url)
             if response.status_code != 200:
@@ -221,14 +223,14 @@ def mirror_rssac_documents():
                 print(url)
                 if not filename.startswith("rssac-"):
                     linkfilename = "rssac-" + docname[5:] + "-en.pdf"
-                    linkpathname = os.path.join(SSACDir, linkfilename)
+                    linkpathname = os.path.join(RSSACDir, linkfilename)
                     if not os.path.exists(linkpathname):
                         os.symlink(pathname, linkpathname)
                         print("  With symlink " + linkfilename)
 
     # If a new file was fetched, make a new index file
     if WriteIndexFile:
-        IndexFile = open(os.path.join(SSACDir, "rssac-index.txt"), mode="w")
+        IndexFile = open(os.path.join(RSSACDir, "rssac-index.txt"), mode="w")
         IndexFile.write("ICANN RSSAC document index as of %s\n\n" % 
             datetime.date.today().strftime("%d-%b-%Y"))
         for d in sorted(doc_dict.keys(), reverse=True):
