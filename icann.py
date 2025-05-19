@@ -25,7 +25,7 @@ from bs4 import BeautifulSoup
 Program for command-line users to access ICANN documents.
 """
 
-__version__ = "1.05"
+__version__ = "1.06"
 __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 
 # Version history:
