@@ -19,13 +19,14 @@ import platform
 import requests
 import tempfile
 import textwrap
+import subprocess
 from bs4 import BeautifulSoup
 
 """
 Program for command-line users to access ICANN documents.
 """
 
-__version__ = "1.06"
+__version__ = "1.07"
 __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 
 # Version history:
@@ -43,11 +44,17 @@ __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 #         in the SSAC and RSSAC publications.
 #  1.06 = Fix bug so that RSSAC publications and index are saved in the
 #         correct directory.
+#  1.07 = Use wget to fetch SSAC, RSSAC, and OCTO publications; wget preserves
+#         the original date on the file.
 
-def clean_html(pathname, html):
+def clean_html(pathname):
     """
     Clear away all of ICANN website decorations, leaving just the document
     """
+    ctime = os.path.getctime(pathname)
+    mtime = os.path.getmtime(pathname)
+    html = open(pathname, mode="r").read()
+
     fout = open(pathname, mode="w")
     fout.write('<!DOCTYPE html>\n')
     fout.write('<html lang="en">\n')
@@ -79,6 +86,17 @@ def clean_html(pathname, html):
     fout.write('</body>\n')
     fout.write('</html>\n')
     fout.close()
+    os.utime(pathname, (ctime, mtime))
+
+
+def wget_file(url, directory, filename):
+    """
+    Use the wget command to fetch a file from the given url.
+    """
+    p = subprocess.Popen(['wget', '--quiet', '--output-document='+filename, url],
+       cwd=directory)
+    p.wait()
+    return os.path.exists(os.path.join(directory, filename))
 
 
 def mirror_ssac_documents():
@@ -135,16 +153,13 @@ def mirror_ssac_documents():
             filename = filename + ".htm"
         pathname = os.path.join(SSACDir, filename)
         if not os.path.exists(pathname):
-            response = requests.get(url)
-            if response.status_code != 200:
+            print(url)
+            if not wget_file(url, SSACDir, filename):
                 sys.stderr.write("Unable to fetch " + url + ".\n")
             else:
                 WriteIndexFile = True
                 if filename.endswith(".htm"):
-                    clean_html(pathname, response.content)
-                else:
-                    open(pathname, mode="wb").write(response.content)
-                print(url)
+                    clean_html(pathname)
                 if not filename.startswith("sac-"):
                     linkfilename = "sac-" + docname[3:]
                     if filename.endswith(".pdf"):
@@ -214,13 +229,11 @@ def mirror_rssac_documents():
         filename = os.path.basename(url)
         pathname = os.path.join(RSSACDir, filename)
         if not os.path.exists(pathname):
-            response = requests.get(url)
-            if response.status_code != 200:
+            print(url)
+            if not wget_file(url, RSSACDir, filename):
                 sys.stderr.write("Unable to fetch " + url + ".\n")
             else:
                 WriteIndexFile = True
-                open(pathname, mode="wb").write(response.content)
-                print(url)
                 if not filename.startswith("rssac-"):
                     linkfilename = "rssac-" + docname[5:] + "-en.pdf"
                     linkpathname = os.path.join(RSSACDir, linkfilename)
@@ -241,7 +254,7 @@ def mirror_rssac_documents():
                 width=73, initial_indent="", subsequent_indent="           ",
                 break_long_words=False)
             for l in ilines:  IndexFile.write(l + "\n")
-            IndexFile.write("        " + url + "\n\n")
+            IndexFile.write("           " + url + "\n\n")
         IndexFile.close()
 
 
@@ -281,13 +294,11 @@ def mirror_octo_documents():
         for l in ilines:  TempFile.write(l + "\n")
         TempFile.write("         " + url + "\n")
         if not os.path.exists(pathname):
-            response = requests.get(url)
-            if response.status_code != 200:
+            print(url)
+            if not wget_file(url, OCTODir, filename):
                 sys.stderr.write("Unable to fetch " + url + ".\n")
             else:
                 WriteIndexFile = True
-                open(pathname, mode="wb").write(response.content)
-                print(url)
         TempFile.write("\n")
 
     # If any files were fetched, save the index; also close the temporary file
@@ -383,18 +394,24 @@ cmds = ['mirror', 'ssac', 'rssac', 'octo']
 if platform.system() != "Darwin":
     sys.exit("This program only works on a Mac. Sorry.")
 
+# Check for a command or other argument
+if len(sys.argv) < 2:
+    print("error: first argument must be a command")
+    usage(sys.argv[0])
+    sys.exit(1)
+
 # Provide help
-if sys.argv[1] == 'help' or '--help' in sys.argv or '-h' in sys.argv:
+if (sys.argv[1] == 'help') or ('--help' in sys.argv) or ('-h' in sys.argv):
     usage(sys.argv[0])
     sys.exit(1)
 
 # Provide version
-if sys.argv[1] == 'version' or '--version' in sys.argv or '-v' in sys.argv:
+if (sys.argv[1] == 'version') or ('--version' in sys.argv) or ('-v' in sys.argv):
     print(os.path.basename(sys.argv[0]) + " " + __version__)
     sys.exit(1)
 
-# Simple command line checks
-if len(sys.argv) < 2 or sys.argv[1] not in cmds:
+# Arguments are handled above; check that a command is provided
+if sys.argv[1] not in cmds:
     print("error: first argument must be a command")
     usage(sys.argv[0])
     sys.exit(1)
