@@ -6,7 +6,7 @@
 # The associated .config file determines which directories are
 # used to store the files.
 #
-# Copyright (c) 2021-2025, Vigil Security, LLC
+# Copyright (c) 2021-2026, Vigil Security, LLC
 # License: https://github.com/russhousley/icann-cli/blob/main/LICENSE
 #
 
@@ -26,7 +26,7 @@ from bs4 import BeautifulSoup
 Program for command-line users to access ICANN documents.
 """
 
-__version__ = "1.07"
+__version__ = "1.08"
 __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 
 # Version history:
@@ -46,6 +46,8 @@ __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 #         correct directory.
 #  1.07 = Use wget to fetch SSAC, RSSAC, and OCTO publications; wget preserves
 #         the original date on the file.
+#  1.08 = On the SSAC and RSSAC websites the 'generalContent' dict was renamed
+#         to the 'content' dict.
 
 def clean_html(pathname):
     """
@@ -121,7 +123,7 @@ def mirror_ssac_documents():
     temp = temp.split("}</script>", 1)[0]
     content = json.loads("{" + temp + "}")
     reports = content['ssac-report-{"groups":"ssac-report","languageTag":"en"}']
-    docs = reports['data']['generalContentOperations']['generalContent']
+    docs = reports['data']['generalContentOperations']['content']
     for d in docs:
         if not 'reportNumber' in d['extra']:
             continue
@@ -209,7 +211,7 @@ def mirror_rssac_documents():
     temp = temp.split("}</script>", 1)[0]
     content = json.loads("{" + temp + "}")
     reports = content['rssacPublication-{"groups":"rssac-publication","languageTag":"en"}']
-    docs = reports['data']['generalContentOperations']['generalContent']
+    docs = reports['data']['generalContentOperations']['content']
     for d in docs:
         if not 'publicationNumber' in d['extra']:
             continue
