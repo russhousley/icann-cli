@@ -46,7 +46,7 @@ __license__ = "https://github.com/russhousley/icann-cli/blob/main/LICENSE"
 #         correct directory.
 #  1.07 = Use wget to fetch SSAC, RSSAC, and OCTO publications; wget preserves
 #         the original date on the file.
-#  1.08 = One the SSAC and RSSAC websites the 'generalContent' dict was renamed
+#  1.08 = On the SSAC and RSSAC websites the 'generalContent' dict was renamed
 #         to the 'content' dict.
 
 def clean_html(pathname):
